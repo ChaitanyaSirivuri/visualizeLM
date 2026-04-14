@@ -1,0 +1,28 @@
+[project]
+name = "lvlm-interpret"
+version = "0.1.0"
+description = "Generic relevancy engine for Vision-Language Models"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "accelerate>=1.0.0",
+    "bitsandbytes>=0.45.0",
+    "matplotlib>=3.7.0",
+    "pillow>=10.0.0",
+    "torch>=2.4.0",
+    "torchvision>=0.19.0",
+    "tqdm>=4.65.0",
+    "transformers>=5.0.0",
+]
+
+[tool.uv]
+# Define a custom package index for PyTorch
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+# Force uv to pull torch and torchvision from this custom index instead of PyPI
+[tool.uv.sources]
+torch = { index = "pytorch" }
+torchvision = { index = "pytorch" }
