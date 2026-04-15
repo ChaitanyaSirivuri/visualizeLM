@@ -11,13 +11,14 @@ Requires `transformers >= 5.0`.
 ### Local
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 ### Google Colab
 
 ```python
-!pip install -q "transformers>=5.0" "accelerate>=1.0" "bitsandbytes>=0.45" pillow matplotlib tqdm
+!pip install uv
+!uv sync
 ```
 
 Torch + torchvision come pre-installed on Colab. Select a GPU runtime
@@ -26,7 +27,7 @@ Torch + torchvision come pre-installed on Colab. Select a GPU runtime
 ## Usage
 
 ```bash
-python test_interpret.py \
+uv run tests/test_interpret.py \
     --model_name_or_path llava-hf/llava-1.5-7b-hf \
     --image path/to/image.jpg \
     --prompt "What is in this image?" \
@@ -50,10 +51,10 @@ One PNG overlay is saved per generated non-separator token, plus
 
 ## Files
 
-- `test_interpret.py` — CLI entrypoint.
-- `src/utils_model.py` — model loading, `_sample` grad-patch, attention hooks.
-- `src/utils_relevancy.py` — relevancy-map construction (rollout + gradient rule).
-- `src/utils_attn_minimal.py` — `draw_heatmap_on_image` overlay helper.
+- `tests/test_interpret.py` — CLI entrypoint.
+- `src/model.py` — model loading, `_sample` grad-patch, attention hooks.
+- `src/relevancy.py` — relevancy-map construction (rollout + gradient rule).
+- `src/visualization.py` — `draw_heatmap_on_image` overlay helper.
 
 ---
 
@@ -124,7 +125,7 @@ Llama sees a flat token sequence:
                       ^img_idx        ^img_idx + 576
 ```
 
-Two sets of attention maps are captured by forward hooks registered in `utils_model.py`:
+Two sets of attention maps are captured by forward hooks registered in `src/model.py`:
 
 - `model.enc_attn_weights`      — 32 Llama layers × `T` generated tokens
 - `model.enc_attn_weights_vit`  — 24 CLIP ViT layers (captured once per image)
@@ -133,7 +134,7 @@ Every captured tensor gets `requires_grad_(True)` and `retain_grad()` so we can 
 
 ### The `_sample` monkey-patch
 
-`GenerationMixin.generate()` is wrapped in `@torch.no_grad()`, which would throw away everything we need. We replace `LlavaForConditionalGeneration._sample` with a version wrapped in `torch.enable_grad()` — that's the 4-line patch at the top of `utils_model.py`. Gradients flow normally inside the sampling loop.
+`GenerationMixin.generate()` is wrapped in `@torch.no_grad()`, which would throw away everything we need. We replace `LlavaForConditionalGeneration._sample` with a version wrapped in `torch.enable_grad()` — that's the 4-line patch at the top of `src/model.py`. Gradients flow normally inside the sampling loop.
 
 ## One generated token → one relevancy map
 
@@ -156,7 +157,7 @@ sequenceDiagram
     R->>R: R = handle_residual(R)
 ```
 
-Walk-through for generated token $t$ (roughly lines 180-200 of `utils_relevancy.py`):
+Walk-through for generated token $t$ (roughly lines 180-200 of `src/relevancy.py`):
 
 1. Build the one-hot gradient for the realized token id.
 2. `token_logits.backward(...)` → gradients now live on every captured `A^{(l)}`.
@@ -209,7 +210,7 @@ The CLI saves one PNG per non-separator word for whichever `--rel_type` you pick
 
 ## From raw 24×24 → pretty overlay
 
-`draw_heatmap_on_image` in `utils_attn_minimal.py` does three cleanup steps that take the result from "confetti" to "focused":
+`draw_heatmap_on_image` in `src/visualization.py` does three cleanup steps that take the result from "confetti" to "focused":
 
 1. **Percentile normalization** (`p_low=60, p_high=99`) — kills the noise floor. Min-max stretches even tiny values, so a straightforward rescale makes noise look like signal.
 2. **Value-dependent alpha** (`alpha = heat^gamma`) — low-heat pixels stay transparent so the underlying image is still readable. A flat 50% alpha floods the whole image in jet's low-end blue.
@@ -237,10 +238,10 @@ The sharp contrast between a content-word map and a function-word map is often m
 
 | File | Responsibility |
 |---|---|
-| `src/utils_model.py` | Load LLaVA, patch `_sample` for grad, register attention hooks. |
-| `src/utils_relevancy.py` | Rule 5 (`avg_heads`), rule 6 (`handle_self_attention_image`, `handle_self_attention_image_vit`), rollout orchestration (`construct_relevancy_map`), word-level aggregation (`compute_word_rel_map`). |
-| `src/utils_attn_minimal.py` | `draw_heatmap_on_image` — percentile norm + blur + value-based alpha + composite. |
-| `test_interpret.py` | CLI glue: load model, run `.generate`, call `construct_relevancy_map`, save overlays. |
+| `src/model.py` | Load model, patch `_sample` for grad, register attention hooks. |
+| `src/relevancy.py` | Rule 5 (`avg_heads`), rule 6 (`handle_self_attention_image`), rollout orchestration (`construct_relevancy_map`), word-level aggregation. |
+| `src/visualization.py` | `draw_heatmap_on_image` — percentile norm + blur + value-based alpha + composite. |
+| `tests/test_interpret.py` | CLI glue: load model, run `.generate`, call `construct_relevancy_map`, save overlays. |
 
 ## References
 
